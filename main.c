@@ -143,12 +143,13 @@ void report_leaks(void) {
 
 typedef struct {
   enum {
-    TT_INT,   // value *int
-    TT_FLOAT, // value *float
-    TT_OP,    // value *Operator
-    TT_NAME,  // value *char
-    TT_CALL,  // value *CallToken
-    TT_BLOCK, // value *TokenVec
+    TT_INT,    // value *int
+    TT_FLOAT,  // value *float
+    TT_OP,     // value *Operator
+    TT_NAME,   // value *char
+    TT_PARENS, // value *CallToken
+    TT_BLOCK,  // value *TokenVec
+    TT_COLON,
   } type;
   void *value;
 } Token;
@@ -210,6 +211,9 @@ Token copy_token(Token token) {
   Token newToken = {0};
   newToken.type = token.type;
   switch (token.type) {
+  case TT_COLON:
+    newToken.type = TT_COLON;
+    break;
   case TT_FLOAT:
     newToken.value = malloc(sizeof(float));
     *(float *)newToken.value = *(float *)token.value;
@@ -227,7 +231,7 @@ Token copy_token(Token token) {
     strcpy_s((char *)newToken.value, strlen((char *)token.value) + 1,
              (char *)token.value);
     break;
-  case TT_CALL:
+  case TT_PARENS:
     TokenVec *newTokenVecs =
         malloc(sizeof(TokenVec) * ((CallToken *)token.value)->argc);
 
@@ -278,7 +282,10 @@ void print_token(Token token) {
   case TT_NAME:
     printf("%s", (char *)token.value);
     break;
-  case TT_CALL:
+  case TT_COLON:
+    printf(":");
+    break;
+  case TT_PARENS:
     printf("(");
     CallToken *callToken = (CallToken *)token.value;
     for (int i = 0; i < callToken->argc; i++) {
@@ -304,7 +311,7 @@ void print_token(Token token) {
 }
 
 void free_token(Token token) {
-  if (token.type == TT_CALL) {
+  if (token.type == TT_PARENS) {
     CallToken *callToken = (CallToken *)token.value;
     for (int i = 0; i < callToken->argc; i++) {
       for (int j = 0; j < callToken->args[i].length; j++) {
@@ -328,6 +335,7 @@ void free_token(Token token) {
 }
 
 TokenVec tokenize(char *buf, int len) {
+
   TokenVec vec = {0};
   int i = 0;
 
@@ -366,6 +374,10 @@ TokenVec tokenize(char *buf, int len) {
       Operator *op = malloc(sizeof(Operator));
       *op = OP_ADD;
       Token token = {.type = TT_OP, .value = op};
+      append_token(&vec, token);
+      i++;
+    } else if (buf[i] == ':') {
+      Token token = {.type = TT_COLON};
       append_token(&vec, token);
       i++;
     } else if (buf[i] == '=') {
@@ -480,7 +492,7 @@ TokenVec tokenize(char *buf, int len) {
       free(strArgs);
 
       Token token = {0};
-      token.type = TT_CALL;
+      token.type = TT_PARENS;
       token.value = malloc(sizeof(CallToken));
       ((CallToken *)token.value)->args = args;
       ((CallToken *)token.value)->argc = argc;
@@ -591,7 +603,12 @@ typedef struct {
 } Expr;
 
 typedef struct {
-  char **args;
+  char *name;
+  Expr type;
+} Arg;
+
+typedef struct {
+  Arg *args;
   int argc;
   Expr body;
 } FuncExpr;
@@ -620,7 +637,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     return "Can't parse empty tokenvec";
   }
 
-  if (tokens.length == 1 && tokens.tokens[0].type == TT_CALL) {
+  if (tokens.length == 1 && tokens.tokens[0].type == TT_PARENS) {
     CallToken callToken = *(CallToken *)tokens.tokens[0].value;
     if (callToken.argc == 1) {
       tokens = callToken.args[0];
@@ -671,34 +688,40 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       if (left.length > 1) {
         return "Can't parse function with more than one argument list";
       }
-      if (left.tokens[0].type == TT_CALL) {
+      if (left.tokens[0].type == TT_PARENS) {
         TokenVec *argTokens = ((CallToken *)left.tokens[0].value)->args;
 
         argc = ((CallToken *)left.tokens[0].value)->argc;
 
-        *(FuncExpr *)(expr->value) =
-            (FuncExpr){.args = calloc(argc, sizeof(char *)),
-                       .argc = argc,
-                       .body = rightExpr};
+        *(FuncExpr *)(expr->value) = (FuncExpr){
+            .args = calloc(argc, sizeof(Arg)), .argc = argc, .body = rightExpr};
 
         for (int i = 0; i < argc; i++) {
-          if (argTokens[i].length != 1) {
-            return "Can't parse function with non-argument argument list";
+          if (argTokens[i].length < 3) {
+            return "Can't parse function with non-name: type argument";
           }
-          Token token = argTokens[i].tokens[0];
-          if (token.type == TT_NAME) {
+          Token name = argTokens[i].tokens[0];
+          Token colon = argTokens[i].tokens[1];
+          TokenVec type = {0};
+          for (int j = 2; j < argTokens[i].length; j++) {
+            append_token(&type, copy_token(argTokens[i].tokens[j]));
+          }
+          if (name.type == TT_NAME && colon.type == TT_COLON) {
+            Expr typeExpr = {.type = EXPR_NULL, .value = NULL};
+            char *error = parse(&typeExpr, type, true);
+            if (error) {
+              return error;
+            }
             FuncExpr *funcExpr = (FuncExpr *)(expr->value);
-            funcExpr->args[i] = _strdup((char *)token.value);
+            funcExpr->args[i] =
+                (Arg){.name = _strdup((char *)name.value), .type = typeExpr};
           } else {
-            return "Can't parse function with non-name argument";
+            for (int j = 0; j < argTokens[i].length; j++) {
+              print_token(argTokens[i].tokens[j]);
+            }
+            return "Can't parse function with non-name: type argument";
           }
         }
-      } else if (left.tokens[0].type == TT_NAME) {
-        argc = 1;
-        *(FuncExpr *)(expr->value) = (FuncExpr){
-            .args = malloc(sizeof(char *)), .argc = argc, .body = rightExpr};
-        FuncExpr *funcExpr = (FuncExpr *)(expr->value);
-        funcExpr->args[0] = _strdup((char *)left.tokens[0].value);
       } else {
         return "Can't parse function with non-argument argument list";
       }
@@ -740,7 +763,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     *expr = (Expr){.type = EXPR_NAME, .value = malloc(sizeof(char *))};
     strcpy_s((char *)expr->value, strlen((char *)tokens.tokens[0].value) + 1,
              (char *)tokens.tokens[0].value);
-  } else if (tokens.tokens[tokens.length - 1].type == TT_CALL) {
+  } else if (tokens.tokens[tokens.length - 1].type == TT_PARENS) {
     CallToken ct = *(CallToken *)tokens.tokens[tokens.length - 1].value;
     *expr =
         (Expr){.type = EXPR_CALL, .value = (void *)malloc(sizeof(CallExpr))};
@@ -789,9 +812,8 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
         (BlockExpr){.stmts = stmts, .stmtc = bt.stmtc, .returns = bt.returns};
   } else {
     char error[1024];
-    int i = 0;
     for (int i = 0; i < tokens.length; i++) {
-      print_token(tokens.tokens[i]);
+      // print_token(tokens.tokens[i]);
     }
     return "Can't parse tokenvec";
   }
@@ -828,6 +850,9 @@ void free_expr(Expr expr) {
   }
   if (expr.type == EXPR_FUNC) {
     FuncExpr func = *(FuncExpr *)expr.value;
+    for (int i = 0; i < func.argc; i++) {
+      free_expr(func.args[i].type);
+    }
     free(func.args);
     free_expr(func.body);
   }
@@ -875,7 +900,9 @@ void print_expr(Expr expr) {
     FuncExpr func = *(FuncExpr *)expr.value;
     printf("(");
     for (int i = 0; i < func.argc; i++) {
-      printf("%s", func.args[i]);
+      printf("%s", func.args[i].name);
+      printf(":");
+      print_expr(func.args[i].type);
       if (i < func.argc - 1) {
         printf(", ");
       }
@@ -897,15 +924,13 @@ int main() {
 
   char *buf = malloc(stats.st_size + 1);
 
-  fread(buf, 1, stats.st_size, file);
+  int read = fread(buf, 1, stats.st_size, file);
 
-  buf[stats.st_size] = '\0';
+  buf[read] = '\0';
 
   fclose(file);
 
-  int len = stats.st_size;
-
-  TokenVec tokens = tokenize(buf, len);
+  TokenVec tokens = tokenize(buf, read);
 
   free(buf);
 

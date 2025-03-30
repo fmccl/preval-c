@@ -1,3 +1,5 @@
-main = (hi, hello) => {
-    print(5, 10+2);
+{
+    main = (num: int) => {
+        print(num);
+    };
 }

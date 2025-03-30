@@ -3,25 +3,25 @@
 #include "memtracker.h"
 #include "parser.h"
 #include "tokeniser.h"
-#include <corecrt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
 int main() {
-  FILE *file;
-  errno_t err = fopen_s(&file, "main.pv", "r");
-  if (err)
-    return err;
+  FILE *file = fopen("main.pv", "r");
+  if (!file) {
+    fprintf(stderr, "Failed to open file\n");
+    return 1;
+  }
   struct stat stats;
-  err = fstat(_fileno(file), &stats);
+  int err = fstat(fileno(file), &stats);
   if (err)
     return err;
 
   char *buf = malloc(stats.st_size + 1);
 
-  int read = fread(buf, 1, stats.st_size, file);
+  size_t read = fread(buf, 1, stats.st_size, file);
 
   buf[read] = '\0';
 

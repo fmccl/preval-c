@@ -6,7 +6,6 @@
 #include "memtracker.h"
 #include "parser.h"
 
-
 char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
   TokenVec tokens = outer_tokens;
   if (tokens.length == 0) {
@@ -90,7 +89,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
             }
             FuncExpr *funcExpr = (FuncExpr *)(expr->value);
             funcExpr->args[i] =
-                (Arg){.name = _strdup((char *)name.value), .type = typeExpr};
+                (Arg){.name = strdup((char *)name.value), .type = typeExpr};
           } else {
             for (int j = 0; j < argTokens[i].length; j++) {
               print_token(argTokens[i].tokens[j]);
@@ -137,8 +136,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     *(float *)expr->value = *(float *)tokens.tokens[0].value;
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_NAME) {
     *expr = (Expr){.type = EXPR_NAME, .value = malloc(sizeof(char *))};
-    strcpy_s((char *)expr->value, strlen((char *)tokens.tokens[0].value) + 1,
-             (char *)tokens.tokens[0].value);
+    strcpy((char *)expr->value, (char *)tokens.tokens[0].value);
   } else if (tokens.tokens[tokens.length - 1].type == TT_PARENS) {
     CallToken ct = *(CallToken *)tokens.tokens[tokens.length - 1].value;
     *expr =
@@ -187,10 +185,6 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     *(BlockExpr *)(expr->value) =
         (BlockExpr){.stmts = stmts, .stmtc = bt.stmtc, .returns = bt.returns};
   } else {
-    char error[1024];
-    for (int i = 0; i < tokens.length; i++) {
-      // print_token(tokens.tokens[i]);
-    }
     return "Can't parse tokenvec";
   }
 

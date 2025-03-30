@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,8 +39,7 @@ Token copy_token(Token token) {
     break;
   case TT_NAME:
     newToken.value = malloc(strlen((char *)token.value) + 1);
-    strcpy_s((char *)newToken.value, strlen((char *)token.value) + 1,
-             (char *)token.value);
+    strcpy((char *)newToken.value, (char *)token.value);
     break;
   case TT_PARENS:
     TokenVec *newTokenVecs =
@@ -144,7 +144,7 @@ void free_token(Token token) {
   free(token.value);
 }
 
-TokenVec tokenize(char *buf, int len) {
+TokenVec tokenize(char *buf, size_t len) {
 
   TokenVec vec = {0};
   int i = 0;
@@ -172,7 +172,7 @@ TokenVec tokenize(char *buf, int len) {
       if (decimal) {
         token.type = TT_FLOAT;
         token.value = malloc(sizeof(float));
-        *(float *)token.value = atof(numStr);
+        *(float *)token.value = (float)atof(numStr);
       } else {
         token.type = TT_INT;
         token.value = malloc(sizeof(int));

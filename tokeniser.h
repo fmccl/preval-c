@@ -1,6 +1,7 @@
 #ifndef TOKENISER_H
 #define TOKENISER_H
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct {
   enum {
@@ -40,5 +41,5 @@ void print_token(Token token);
 
 void free_token(Token token);
 
-TokenVec tokenize(char *buf, int len);
+TokenVec tokenize(char *buf, size_t len);
 #endif

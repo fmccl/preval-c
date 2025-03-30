@@ -130,6 +130,7 @@ void report_leaks(void) {
 
 #define malloc(size) debug_malloc(size, __FILE__, __LINE__)
 #define realloc(ptr, size) debug_realloc(ptr, size, __FILE__, __LINE__)
+#define calloc(ptr, size) debug_calloc(ptr, size, __FILE__, __LINE__)
 #define free(ptr) debug_free(ptr, __FILE__, __LINE__)
 
 #include <corecrt.h>
@@ -330,10 +331,6 @@ TokenVec tokenize(char *buf, int len) {
   TokenVec vec = {0};
   int i = 0;
 
-  // non-postfix operators should set this to false
-  // everything else true
-  bool shouldCall = false;
-
   while (i < len) {
     if (isspace(buf[i])) {
       i++;
@@ -364,60 +361,43 @@ TokenVec tokenize(char *buf, int len) {
         *(int *)token.value = atoi(numStr);
       }
       append_token(&vec, token);
-      shouldCall = true;
       free(numStr);
     } else if (buf[i] == '+') {
       Operator *op = malloc(sizeof(Operator));
       *op = OP_ADD;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
-      shouldCall = false;
       i++;
     } else if (buf[i] == '=') {
       Operator *op = malloc(sizeof(Operator));
-      *op = OP_ASSIGN;
+      if (i + 1 < len && buf[i + 1] == '>') {
+        i++;
+        *op = OP_ARROW;
+      } else {
+        *op = OP_ASSIGN;
+      }
+
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
-      shouldCall = false;
       i++;
-    }
-    if (buf[i] == '-') {
+    } else if (buf[i] == '-') {
       Operator *op = malloc(sizeof(Operator));
       *op = OP_SUB;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
-      shouldCall = false;
       i++;
     } else if (buf[i] == '/') {
       Operator *op = malloc(sizeof(Operator));
       *op = OP_DIV;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
-      shouldCall = false;
       i++;
     } else if (buf[i] == '*') {
       Operator *op = malloc(sizeof(Operator));
       *op = OP_MUL;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
-      shouldCall = false;
       i++;
-    } else if (!shouldCall && buf[i] == '(') {
-      int contentsLen = 0;
-      while (i + contentsLen < len && buf[i + contentsLen] != ')') {
-        contentsLen++;
-      }
-      char *contents = malloc(contentsLen + 1);
-      memcpy(contents, buf + i + 1, contentsLen);
-      contents[contentsLen] = '\0';
-      Token token = {0};
-      token.type = TT_PARENS;
-      token.value = malloc(sizeof(TokenVec));
-      *(TokenVec *)token.value = tokenize(contents, contentsLen);
-      free(contents);
-      append_token(&vec, token);
-      i += contentsLen + 1;
-      shouldCall = true;
     } else if (isalnum(buf[i]) || buf[i] == '_') {
       int nameLen = 0;
       while (i + nameLen < len &&
@@ -431,10 +411,7 @@ TokenVec tokenize(char *buf, int len) {
 
       Token token = {.type = TT_NAME, .value = name};
       append_token(&vec, token);
-      shouldCall = true;
-    } else if (shouldCall &&
-               buf[i] ==
-                   '(') { // TODO: REFACTOR TO MAKE ALL LOOKS int j = i + 1;
+    } else if (buf[i] == '(') {
       i++;
       int argc = 0;
       int open = 1;
@@ -462,7 +439,7 @@ TokenVec tokenize(char *buf, int len) {
         }
       }
 
-      TokenVec *args = malloc(sizeof(TokenVec) * argc);
+      TokenVec *args = calloc(argc, sizeof(TokenVec));
       int argIdx = 0;
 
       int *argLengths = calloc(argc, sizeof(int));
@@ -485,7 +462,7 @@ TokenVec tokenize(char *buf, int len) {
         }
       }
 
-      char **strArgs = malloc(sizeof(char *) * argc);
+      char **strArgs = calloc(argc, sizeof(char *));
 
       for (int j = 0; j < argc; j++) {
         strArgs[j] = malloc(argLengths[j] + 1);
@@ -494,13 +471,12 @@ TokenVec tokenize(char *buf, int len) {
         i += argLengths[j] + 1; // +1 for the comma
       }
 
-      i++; // Skip the closing ')'
-
       for (int j = 0; j < argc; j++) {
         args[j] = tokenize(strArgs[j], argLengths[j]);
         free(strArgs[j]);
       }
 
+      free(argLengths);
       free(strArgs);
 
       Token token = {0};
@@ -537,7 +513,7 @@ TokenVec tokenize(char *buf, int len) {
         }
       }
 
-      TokenVec *args = malloc(sizeof(TokenVec) * argc);
+      TokenVec *args = calloc(argc, sizeof(TokenVec));
       int argIdx = 0;
 
       int *argLengths = calloc(argc, sizeof(int));
@@ -569,13 +545,12 @@ TokenVec tokenize(char *buf, int len) {
         i += argLengths[j] + 1; // +1 for the semicolon
       }
 
-      i++; // Skip the closing '}'
-
       for (int j = 0; j < argc; j++) {
         args[j] = tokenize(strArgs[j], argLengths[j]);
         free(strArgs[j]);
       }
 
+      free(argLengths);
       free(strArgs);
 
       bool returns = true;
@@ -609,10 +584,17 @@ typedef struct {
     EXPR_FLOAT, // value *float
     EXPR_OP,    // value *Operation
     EXPR_CALL,  // value *CallExpr
-    EXPR_BLOCK  // value *BlockExpr
+    EXPR_BLOCK, // value *BlockExpr
+    EXPR_FUNC   // value *FuncExpr
   } type;
   void *value;
 } Expr;
+
+typedef struct {
+  char **args;
+  int argc;
+  Expr body;
+} FuncExpr;
 
 typedef struct {
   Expr left;
@@ -638,8 +620,11 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     return "Can't parse empty tokenvec";
   }
 
-  if (tokens.length == 1 && tokens.tokens[0].type == TT_PARENS) {
-    tokens = *(TokenVec *)tokens.tokens[0].value;
+  if (tokens.length == 1 && tokens.tokens[0].type == TT_CALL) {
+    CallToken callToken = *(CallToken *)tokens.tokens[0].value;
+    if (callToken.argc == 1) {
+      tokens = callToken.args[0];
+    }
   }
 
   int lowest_p = 9999;
@@ -671,25 +656,80 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       append_token(&right, copy_token(tokens.tokens[i]));
     }
 
-    *expr = (Expr){.type = EXPR_OP, .value = (void *)malloc(sizeof(Operation))};
+    if (*(Operator *)(tokens.tokens[lowest_p_idx].value) == OP_ARROW) {
+      *expr =
+          (Expr){.type = EXPR_FUNC, .value = (void *)malloc(sizeof(FuncExpr))};
 
-    Expr leftExpr = {.type = EXPR_NULL, .value = NULL};
-    Expr rightExpr = {.type = EXPR_NULL, .value = NULL};
+      Expr rightExpr = {.type = EXPR_NULL, .value = NULL};
 
-    char *error = parse(&leftExpr, left, true);
-    if (error) {
-      return error;
+      char *error = parse(&rightExpr, right, true);
+      if (error) {
+        return error;
+      }
+
+      int argc = 0;
+      if (left.length > 1) {
+        return "Can't parse function with more than one argument list";
+      }
+      if (left.tokens[0].type == TT_CALL) {
+        TokenVec *argTokens = ((CallToken *)left.tokens[0].value)->args;
+
+        argc = ((CallToken *)left.tokens[0].value)->argc;
+
+        *(FuncExpr *)(expr->value) =
+            (FuncExpr){.args = calloc(argc, sizeof(char *)),
+                       .argc = argc,
+                       .body = rightExpr};
+
+        for (int i = 0; i < argc; i++) {
+          if (argTokens[i].length != 1) {
+            return "Can't parse function with non-argument argument list";
+          }
+          Token token = argTokens[i].tokens[0];
+          if (token.type == TT_NAME) {
+            FuncExpr *funcExpr = (FuncExpr *)(expr->value);
+            funcExpr->args[i] = _strdup((char *)token.value);
+          } else {
+            return "Can't parse function with non-name argument";
+          }
+        }
+      } else if (left.tokens[0].type == TT_NAME) {
+        argc = 1;
+        *(FuncExpr *)(expr->value) = (FuncExpr){
+            .args = malloc(sizeof(char *)), .argc = argc, .body = rightExpr};
+        FuncExpr *funcExpr = (FuncExpr *)(expr->value);
+        funcExpr->args[0] = _strdup((char *)left.tokens[0].value);
+      } else {
+        return "Can't parse function with non-argument argument list";
+      }
+
+      for (int i = 0; i < left.length; i++) {
+        free_token(left.tokens[i]);
+      }
+      free(left.tokens);
+    } else {
+
+      *expr =
+          (Expr){.type = EXPR_OP, .value = (void *)malloc(sizeof(Operation))};
+
+      Expr leftExpr = {.type = EXPR_NULL, .value = NULL};
+      Expr rightExpr = {.type = EXPR_NULL, .value = NULL};
+
+      char *error = parse(&leftExpr, left, true);
+      if (error) {
+        return error;
+      }
+
+      error = parse(&rightExpr, right, true);
+      if (error) {
+        return error;
+      }
+
+      *(Operation *)(expr->value) =
+          (Operation){.left = leftExpr,
+                      .right = rightExpr,
+                      .op = *(Operator *)tokens.tokens[lowest_p_idx].value};
     }
-
-    error = parse(&rightExpr, right, true);
-    if (error) {
-      return error;
-    }
-
-    *(Operation *)(expr->value) =
-        (Operation){.left = leftExpr,
-                    .right = rightExpr,
-                    .op = *(Operator *)tokens.tokens[lowest_p_idx].value};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_INT) {
     *expr = (Expr){.type = EXPR_INT, .value = (void *)malloc(sizeof(int))};
     *(int *)expr->value = *(int *)tokens.tokens[0].value;
@@ -786,6 +826,11 @@ void free_expr(Expr expr) {
     }
     free(block.stmts);
   }
+  if (expr.type == EXPR_FUNC) {
+    FuncExpr func = *(FuncExpr *)expr.value;
+    free(func.args);
+    free_expr(func.body);
+  }
   free(expr.value);
 }
 
@@ -826,6 +871,17 @@ void print_expr(Expr expr) {
       printf(";\n");
     }
     printf("}");
+  } else if (expr.type == EXPR_FUNC) {
+    FuncExpr func = *(FuncExpr *)expr.value;
+    printf("(");
+    for (int i = 0; i < func.argc; i++) {
+      printf("%s", func.args[i]);
+      if (i < func.argc - 1) {
+        printf(", ");
+      }
+    }
+    printf(") => ");
+    print_expr(func.body);
   }
 }
 
@@ -853,6 +909,12 @@ int main() {
 
   free(buf);
 
+  // for (int i = 0; i < tokens.length; i++) {
+  //   print_token(tokens.tokens[i]);
+  // }
+
+  // return 0;
+
   Expr expr = {.type = EXPR_NULL, .value = NULL};
   char *error = parse(&expr, tokens);
   if (error) {
@@ -861,6 +923,7 @@ int main() {
   }
 
   print_expr(expr);
+  printf("\n");
 
   free_expr(expr);
 

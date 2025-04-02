@@ -10,21 +10,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-// void compileExpr(StringBuilder decl, StringBuilder impl, char *name,
-//                  Expr expr) {}
-
-// void compileFunc(StringBuilder decl, StringBuilder impl, char *name,
-//                  FuncExpr func) {
-//   sb_write(decl, "declare void @");
-//   sb_write(decl, name);
-//   sb_write(decl, "()");
-
-//   sb_write(impl, "define void @");
-//   sb_write(impl, name);
-//   sb_write(impl, "(){");
-//   compileExpr(decl, impl, , Expr expr) sb_write(impl, "}");
-// }
-
 int main() {
   FILE *file = fopen("main.pv", "r");
   if (!file) {

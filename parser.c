@@ -5,6 +5,7 @@
 
 #include "memtracker.h"
 #include "parser.h"
+#include "tokeniser.h"
 
 char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
   TokenVec tokens = outer_tokens;
@@ -149,9 +150,10 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
                       .op = tokens.tokens[lowest_p_idx].value.op};
     }
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_INT) {
-    *expr = (Expr){.type = EXPR_INT, .value = tokens.tokens[0].value._int};
+    *expr = (Expr){.type = EXPR_INT, .value._int = tokens.tokens[0].value._int};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_FLOAT) {
-    *expr = (Expr){.type = EXPR_FLOAT, .value = tokens.tokens[0].value._float};
+    *expr = (Expr){.type = EXPR_FLOAT,
+                   .value._float = tokens.tokens[0].value._float};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_NAME) {
     *expr = (Expr){.type = EXPR_NAME, .value.name = malloc(sizeof(char *))};
     strcpy((char *)expr->value.name, tokens.tokens[0].value.name);
@@ -260,7 +262,7 @@ void print_expr(Expr expr) {
   if (expr.type == EXPR_INT) {
     printf("%d", expr.value._int);
   } else if (expr.type == EXPR_FLOAT) {
-    printf("%f", expr.value._float);
+    printf("%ff", expr.value._float);
   } else if (expr.type == EXPR_OP) {
     Operation op = *(Operation *)expr.value.op;
     printf("(");

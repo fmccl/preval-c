@@ -5,12 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "label": "Build",
-            "type": "shell",
-            "command": "cmake --build /mnt/c/yourpath/build",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        ]
-    }
+            "type": "cmake",
+            "request": "launch",
+            "name": "CMake: Configure project",
+            "cmakeDebugType": "configure",
+            "clean": false,
+            "configureAll": false
+        },
+    ]
+}

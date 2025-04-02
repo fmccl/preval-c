@@ -30,6 +30,56 @@ typedef struct {
   const char *type;
 } CompiledExpr;
 
+CompiledExpr compile_expr(StringBuilder *decl, StringBuilder *impl, Expr expr,
+                          int *name);
+
+CompiledExpr compile_operation(StringBuilder *decl, StringBuilder *impl,
+                               Operation op, int *name) {
+  Type leftType = infer_type(op.left, NULL, 0);
+  Type rightType = infer_type(op.right, NULL, 0);
+  if ((leftType.type == TYPE_I32 && rightType.type == TYPE_I32) ||
+      (leftType.type == TYPE_F32 && leftType.type == TYPE_F32)) {
+    CompiledExpr left = compile_expr(decl, impl, op.left, name);
+    CompiledExpr right = compile_expr(decl, impl, op.right, name);
+    char *nameStr = malloc(12);
+    sprintf(nameStr, "%%%d", *name);
+    sb_write(impl, nameStr);
+    sb_write(impl, " = ");
+    switch (op.op) {
+    case OP_ADD: {
+      sb_write(impl, "add ");
+      break;
+    }
+    case OP_SUB: {
+      sb_write(impl, "sub ");
+      break;
+    }
+    case OP_DIV: {
+      if (op.left.type == EXPR_INT) {
+        sb_write(impl, "udiv ");
+      } else {
+        sb_write(impl, "fdiv ");
+      }
+      break;
+    }
+    case OP_MUL: {
+      sb_write(impl, "mul ");
+      break;
+    }
+    }
+    (*name)++;
+    sb_write(impl, left.type);
+    sb_write(impl, " ");
+    sb_write(impl, left.name);
+    sb_write(impl, ", ");
+    sb_write(impl, right.name);
+    sb_write(impl, "\n");
+    free(left.name);
+    free(right.name);
+    return (CompiledExpr){.name = nameStr, .type = left.type};
+  }
+}
+
 // this should return the way to get the value out of the expression
 CompiledExpr compile_expr(StringBuilder *decl, StringBuilder *impl, Expr expr,
                           int *name) {
@@ -45,48 +95,7 @@ CompiledExpr compile_expr(StringBuilder *decl, StringBuilder *impl, Expr expr,
     return (CompiledExpr){.name = str, .type = "f32"};
   }
   case EXPR_OP: {
-    Operation op = *expr.value.op;
-    switch (op.op) {
-    case OP_ADD:
-    case OP_SUB:
-    case OP_DIV:
-    case OP_MUL: {
-      CompiledExpr left = compile_expr(decl, impl, op.left, name);
-      CompiledExpr right = compile_expr(decl, impl, op.right, name);
-      char *nameStr = malloc(12);
-      sprintf(nameStr, "%%%d", *name);
-      sb_write(impl, nameStr);
-      sb_write(impl, " = ");
-      switch (op.op) {
-      case OP_ADD: {
-        sb_write(impl, "add ");
-        break;
-      }
-      case OP_SUB: {
-        sb_write(impl, "sub ");
-        break;
-      }
-      case OP_DIV: {
-        sb_write(impl, "udiv ");
-        break;
-      }
-      case OP_MUL: {
-        sb_write(impl, "mul ");
-        break;
-      }
-      }
-      (*name)++;
-      sb_write(impl, left.type);
-      sb_write(impl, " ");
-      sb_write(impl, left.name);
-      sb_write(impl, ", ");
-      sb_write(impl, right.name);
-      sb_write(impl, "\n");
-      free(left.name);
-      free(right.name);
-      return (CompiledExpr){.name = nameStr, .type = left.type};
-    }
-    }
+    return compile_operation(decl, impl, *expr.value.op, name);
   }
   case EXPR_BLOCK: {
     CompiledExpr last = {0};

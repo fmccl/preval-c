@@ -170,7 +170,7 @@ TokenVec tokenize(char *buf, size_t len) {
       Token token = {0};
       if (decimal) {
         token.type = TT_FLOAT;
-        token.value._float = atof(numStr);
+        token.value._float = (float)atof(numStr);
       } else {
         token.type = TT_INT;
         token.value._int = atoi(numStr);

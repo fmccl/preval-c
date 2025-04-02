@@ -8,8 +8,8 @@ typedef struct {
   size_t capacity;
 } StringBuilder;
 
-void sb_write(StringBuilder *, char *);
+void sb_write(StringBuilder *, const char *);
 
-char *sb_to_string(StringBuilder *, bool);
+char *sb_to_string(StringBuilder *, bool free);
 
 #endif

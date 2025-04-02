@@ -25,30 +25,84 @@ char *type_to_llvm(Type type) {
   return NULL;
 }
 
+typedef struct {
+  char *name;
+  const char *type;
+} CompiledExpr;
+
 // this should return the way to get the value out of the expression
-char *compile_expr(StringBuilder *decl, StringBuilder *impl, Expr expr,
-                   int *name) {
+CompiledExpr compile_expr(StringBuilder *decl, StringBuilder *impl, Expr expr,
+                          int *name) {
   switch (expr.type) {
   case EXPR_INT: {
-    char *str = malloc(_scprintf("i32 %d", expr.value._int) + 1);
-    sprintf(str, "i32 %d", expr.value._int);
-    return str;
+    char *str = malloc(_scprintf("%d", expr.value._int) + 1);
+    sprintf(str, "%d", expr.value._int);
+    return (CompiledExpr){.name = str, .type = "i32"};
+  }
+  case EXPR_FLOAT: {
+    char *str = malloc(_scprintf("%f", expr.value._float) + 1);
+    sprintf(str, "%f", expr.value._float);
+    return (CompiledExpr){.name = str, .type = "f32"};
+  }
+  case EXPR_OP: {
+    Operation op = *expr.value.op;
+    switch (op.op) {
+    case OP_ADD:
+    case OP_SUB:
+    case OP_DIV:
+    case OP_MUL: {
+      CompiledExpr left = compile_expr(decl, impl, op.left, name);
+      CompiledExpr right = compile_expr(decl, impl, op.right, name);
+      char *nameStr = malloc(12);
+      sprintf(nameStr, "%%%d", *name);
+      sb_write(impl, nameStr);
+      sb_write(impl, " = ");
+      switch (op.op) {
+      case OP_ADD: {
+        sb_write(impl, "add ");
+        break;
+      }
+      case OP_SUB: {
+        sb_write(impl, "sub ");
+        break;
+      }
+      case OP_DIV: {
+        sb_write(impl, "udiv ");
+        break;
+      }
+      case OP_MUL: {
+        sb_write(impl, "mul ");
+        break;
+      }
+      }
+      (*name)++;
+      sb_write(impl, left.type);
+      sb_write(impl, " ");
+      sb_write(impl, left.name);
+      sb_write(impl, ", ");
+      sb_write(impl, right.name);
+      sb_write(impl, "\n");
+      free(left.name);
+      free(right.name);
+      return (CompiledExpr){.name = nameStr, .type = left.type};
+    }
+    }
   }
   case EXPR_BLOCK: {
-    char *last = NULL;
+    CompiledExpr last = {0};
     for (size_t i = 0; i < expr.value.block->stmtc; i++) {
       Expr stmt = expr.value.block->stmts[i];
-      char *ref = compile_expr(decl, impl, stmt, name);
-      if (i < expr.value.block->stmtc - 1) {
+      CompiledExpr ref = compile_expr(decl, impl, stmt, name);
+      if (i >= expr.value.block->stmtc - 1) {
         last = ref;
       } else {
-        free(ref);
+        free(ref.name);
       }
     }
     return last;
   }
   }
-  return NULL;
+  return (CompiledExpr){0};
 }
 
 void compile_function(StringBuilder *decl, StringBuilder *impl, FuncExpr func,
@@ -67,16 +121,17 @@ void compile_function(StringBuilder *decl, StringBuilder *impl, FuncExpr func,
     sb_write(impl, ",");
     free_type(type);
   }
+
   sb_write(impl, ")");
-  sb_write(impl, "{");
+  sb_write(impl, "{\n");
 
-  int varname = 0;
-  char *var = compile_expr(decl, impl, func.body, &varname);
+  int varname = 1;
+  CompiledExpr var = compile_expr(decl, impl, func.body, &varname);
   sb_write(impl, "ret ");
-  sb_write(impl, var);
-  free(var);
-
-  sb_write(impl, "}");
+  sb_write(impl, var.type);
+  sb_write(impl, var.name);
+  free(var.name);
+  sb_write(impl, "}\n");
 
   free_type(returnType);
 }

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <string.h>
 
-void sb_write(StringBuilder *sb, char *text) {
+void sb_write(StringBuilder *sb, const char *text) {
   if (sb->length >= sb->capacity) {
     sb->capacity = 1 + sb->capacity * 2;
     sb->strings = realloc(sb->strings, sizeof(char *) * sb->capacity);

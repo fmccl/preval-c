@@ -221,6 +221,7 @@ void free_expr(Expr expr) {
     Operation op = *(Operation *)expr.value.op;
     free_expr(op.left);
     free_expr(op.right);
+    free(expr.value.op);
   }
   if (expr.type == EXPR_CALL) {
     CallExpr call = *(CallExpr *)expr.value.call;

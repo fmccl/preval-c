@@ -4,15 +4,13 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
-            "type": "lldb-dap",
-            "request": "launch",
-            "name": "Debug",
-            "program": "${workspaceRoot}/main.exe",
-            "args": [],
-            "env": [],
-            "cwd": "${workspaceRoot}"
-        }
-    ]
-}
+            "label": "Build",
+            "type": "shell",
+            "command": "cmake --build /mnt/c/yourpath/build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        ]
+    }

@@ -1,3 +1,4 @@
+#include <stddef.h>
 void *debug_malloc(size_t size, const char *file, int line);
 
 void *debug_realloc(void *ptr, size_t size, const char *file, int line);

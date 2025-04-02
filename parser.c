@@ -13,7 +13,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
   }
 
   if (tokens.length == 1 && tokens.tokens[0].type == TT_PARENS) {
-    CallToken callToken = *(CallToken *)tokens.tokens[0].value;
+    ParensToken callToken = *(ParensToken *)tokens.tokens[0].value.parens;
     if (callToken.argc == 1) {
       tokens = callToken.args[0];
     }
@@ -26,7 +26,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
     Token token = tokens.tokens[i];
 
     if (token.type == TT_OP) {
-      Operator op = *(Operator *)token.value;
+      Operator op = token.value.op;
       int p = precidence(op);
       if (p < lowest_p) {
         lowest_p = p;
@@ -48,9 +48,9 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       append_token(&right, copy_token(tokens.tokens[i]));
     }
 
-    if (*(Operator *)(tokens.tokens[lowest_p_idx].value) == OP_ARROW) {
-      *expr =
-          (Expr){.type = EXPR_FUNC, .value = (void *)malloc(sizeof(FuncExpr))};
+    if ((tokens.tokens[lowest_p_idx].value.op) == OP_ARROW) {
+      *expr = (Expr){.type = EXPR_FUNC,
+                     .value.func = (void *)malloc(sizeof(FuncExpr))};
 
       Expr rightExpr = {.type = EXPR_NULL, .value = NULL};
 
@@ -64,37 +64,57 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
         return "Can't parse function with more than one argument list";
       }
       if (left.tokens[0].type == TT_PARENS) {
-        TokenVec *argTokens = ((CallToken *)left.tokens[0].value)->args;
+        TokenVec *argTokens =
+            ((ParensToken *)left.tokens[0].value.parens)->args;
 
-        argc = ((CallToken *)left.tokens[0].value)->argc;
+        argc = ((ParensToken *)left.tokens[0].value.parens)->argc;
 
-        *(FuncExpr *)(expr->value) = (FuncExpr){
+        *(FuncExpr *)(expr->value.func) = (FuncExpr){
             .args = calloc(argc, sizeof(Arg)), .argc = argc, .body = rightExpr};
 
         for (int i = 0; i < argc; i++) {
-          if (argTokens[i].length < 3) {
-            return "Can't parse function with non-name: type argument";
+          if (argTokens[i].length == 2) {
+            return "Can't parse function with non-name[: type] argument";
           }
-          Token name = argTokens[i].tokens[0];
-          Token colon = argTokens[i].tokens[1];
-          TokenVec type = {0};
-          for (int j = 2; j < argTokens[i].length; j++) {
-            append_token(&type, copy_token(argTokens[i].tokens[j]));
-          }
-          if (name.type == TT_NAME && colon.type == TT_COLON) {
-            Expr typeExpr = {.type = EXPR_NULL, .value = NULL};
-            char *error = parse(&typeExpr, type, true);
-            if (error) {
-              return error;
+          if (argTokens[i].length == 1) {
+            Token name = argTokens[i].tokens[0];
+            if (name.type == TT_NAME) {
+              FuncExpr *funcExpr = (FuncExpr *)expr->value.func;
+              char *nameStr = malloc(strlen(name.value.name) + 1);
+              strcpy(nameStr, name.value.name);
+              funcExpr->args[i] = (Arg){.name = nameStr, .type = NULL};
+            } else {
+              return "Can't use an expression as a function parameter name";
             }
-            FuncExpr *funcExpr = (FuncExpr *)(expr->value);
-            funcExpr->args[i] =
-                (Arg){.name = strdup((char *)name.value), .type = typeExpr};
           } else {
-            for (int j = 0; j < argTokens[i].length; j++) {
-              print_token(argTokens[i].tokens[j]);
+            Token name = argTokens[i].tokens[0];
+            Token colon = argTokens[i].tokens[1];
+            TokenVec type = {0};
+            for (int j = 2; j < argTokens[i].length; j++) {
+              append_token(&type, copy_token(argTokens[i].tokens[j]));
             }
-            return "Can't parse function with non-name: type argument";
+            if (name.type == TT_NAME && colon.type == TT_COLON) {
+              Expr typeExpr = {.type = EXPR_NULL, .value = NULL};
+              char *error = parse(&typeExpr, type, true);
+              if (error) {
+                return error;
+              }
+
+              if (typeExpr.type != EXPR_NAME) {
+                return "Types must be names";
+              }
+              char *typeName = typeExpr.value.name;
+
+              FuncExpr *funcExpr = (FuncExpr *)(expr->value.func);
+              char *nameStr = malloc(strlen(name.value.name) + 1);
+              strcpy(nameStr, name.value.name);
+              funcExpr->args[i] = (Arg){.name = nameStr, .type = typeName};
+            } else {
+              for (int j = 0; j < argTokens[i].length; j++) {
+                print_token(argTokens[i].tokens[j]);
+              }
+              return "Can't parse function with non-name: type argument";
+            }
           }
         }
       } else {
@@ -107,8 +127,8 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       free(left.tokens);
     } else {
 
-      *expr =
-          (Expr){.type = EXPR_OP, .value = (void *)malloc(sizeof(Operation))};
+      *expr = (Expr){.type = EXPR_OP,
+                     .value.op = (void *)malloc(sizeof(Operation))};
 
       Expr leftExpr = {.type = EXPR_NULL, .value = NULL};
       Expr rightExpr = {.type = EXPR_NULL, .value = NULL};
@@ -123,24 +143,23 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
         return error;
       }
 
-      *(Operation *)(expr->value) =
+      *(Operation *)(expr->value.op) =
           (Operation){.left = leftExpr,
                       .right = rightExpr,
-                      .op = *(Operator *)tokens.tokens[lowest_p_idx].value};
+                      .op = tokens.tokens[lowest_p_idx].value.op};
     }
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_INT) {
-    *expr = (Expr){.type = EXPR_INT, .value = (void *)malloc(sizeof(int))};
-    *(int *)expr->value = *(int *)tokens.tokens[0].value;
+    *expr = (Expr){.type = EXPR_INT, .value = tokens.tokens[0].value._int};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_FLOAT) {
-    *expr = (Expr){.type = EXPR_FLOAT, .value = (void *)malloc(sizeof(float))};
-    *(float *)expr->value = *(float *)tokens.tokens[0].value;
+    *expr = (Expr){.type = EXPR_FLOAT, .value = tokens.tokens[0].value._float};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_NAME) {
-    *expr = (Expr){.type = EXPR_NAME, .value = malloc(sizeof(char *))};
-    strcpy((char *)expr->value, (char *)tokens.tokens[0].value);
+    *expr = (Expr){.type = EXPR_NAME, .value.name = malloc(sizeof(char *))};
+    strcpy((char *)expr->value.name, tokens.tokens[0].value.name);
   } else if (tokens.tokens[tokens.length - 1].type == TT_PARENS) {
-    CallToken ct = *(CallToken *)tokens.tokens[tokens.length - 1].value;
-    *expr =
-        (Expr){.type = EXPR_CALL, .value = (void *)malloc(sizeof(CallExpr))};
+    ParensToken ct =
+        *(ParensToken *)tokens.tokens[tokens.length - 1].value.parens;
+    *expr = (Expr){.type = EXPR_CALL,
+                   .value.call = (void *)malloc(sizeof(CallExpr))};
 
     Expr *args = malloc(sizeof(Expr) * ct.argc);
     for (int i = 0; i < ct.argc; i++) {
@@ -163,13 +182,13 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       return error;
     }
 
-    *(CallExpr *)(expr->value) =
+    *(CallExpr *)(expr->value.call) =
         (CallExpr){.func = func, .args = args, .argc = ct.argc};
   } else if (tokens.length == 1 && tokens.tokens[0].type == TT_BLOCK) {
-    BlockToken bt = *(BlockToken *)tokens.tokens[0].value;
+    BlockToken bt = *(BlockToken *)tokens.tokens[0].value.block;
 
-    *expr =
-        (Expr){.type = EXPR_BLOCK, .value = (void *)malloc(sizeof(BlockExpr))};
+    *expr = (Expr){.type = EXPR_BLOCK,
+                   .value.block = (void *)malloc(sizeof(BlockExpr))};
 
     Expr *stmts = malloc(sizeof(Expr) * bt.stmtc);
 
@@ -182,7 +201,7 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
       stmts[i] = stmt;
     }
 
-    *(BlockExpr *)(expr->value) =
+    *(BlockExpr *)(expr->value.block) =
         (BlockExpr){.stmts = stmts, .stmtc = bt.stmtc, .returns = bt.returns};
   } else {
     return "Can't parse tokenvec";
@@ -199,45 +218,50 @@ char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens) {
 
 void free_expr(Expr expr) {
   if (expr.type == EXPR_OP) {
-    Operation op = *(Operation *)expr.value;
+    Operation op = *(Operation *)expr.value.op;
     free_expr(op.left);
     free_expr(op.right);
   }
   if (expr.type == EXPR_CALL) {
-    CallExpr call = *(CallExpr *)expr.value;
+    CallExpr call = *(CallExpr *)expr.value.call;
     for (int i = 0; i < call.argc; i++) {
       free_expr(call.args[i]);
     }
     free_expr(call.func);
     free(call.args);
+    free(expr.value.call);
   }
   if (expr.type == EXPR_BLOCK) {
-    BlockExpr block = *(BlockExpr *)expr.value;
+    BlockExpr block = *(BlockExpr *)expr.value.block;
     for (int i = 0; i < block.stmtc; i++) {
       free_expr(block.stmts[i]);
     }
     free(block.stmts);
+    free(expr.value.block);
   }
   if (expr.type == EXPR_FUNC) {
-    FuncExpr func = *(FuncExpr *)expr.value;
+    FuncExpr func = *(FuncExpr *)expr.value.func;
     for (int i = 0; i < func.argc; i++) {
-      free_expr(func.args[i].type);
+      free(func.args[i].type);
     }
     free(func.args);
     free_expr(func.body);
+    free(expr.value.func);
   }
-  free(expr.value);
+  if (expr.type == EXPR_NAME) {
+    free(expr.value.name);
+  }
 }
 
 #define parse(expr, tokens) parse(expr, tokens, true)
 
 void print_expr(Expr expr) {
   if (expr.type == EXPR_INT) {
-    printf("%d", *(int *)expr.value);
+    printf("%d", expr.value._int);
   } else if (expr.type == EXPR_FLOAT) {
-    printf("%f", *(float *)expr.value);
+    printf("%f", expr.value._float);
   } else if (expr.type == EXPR_OP) {
-    Operation op = *(Operation *)expr.value;
+    Operation op = *(Operation *)expr.value.op;
     printf("(");
     print_expr(op.left);
     printf(" %c ", op.op);
@@ -246,9 +270,9 @@ void print_expr(Expr expr) {
   } else if (expr.type == EXPR_NULL) {
     printf("NULL");
   } else if (expr.type == EXPR_NAME) {
-    printf("%s", (char *)expr.value);
+    printf("%s", (char *)expr.value.name);
   } else if (expr.type == EXPR_CALL) {
-    CallExpr call = *(CallExpr *)expr.value;
+    CallExpr call = *(CallExpr *)expr.value.call;
     print_expr(call.func);
     printf("(");
     for (int i = 0; i < call.argc; i++) {
@@ -259,7 +283,7 @@ void print_expr(Expr expr) {
     }
     printf(")");
   } else if (expr.type == EXPR_BLOCK) {
-    BlockExpr block = *(BlockExpr *)expr.value;
+    BlockExpr block = *(BlockExpr *)expr.value.block;
     printf("{\n");
     for (int i = 0; i < block.stmtc; i++) {
       print_expr(block.stmts[i]);
@@ -267,12 +291,12 @@ void print_expr(Expr expr) {
     }
     printf("}");
   } else if (expr.type == EXPR_FUNC) {
-    FuncExpr func = *(FuncExpr *)expr.value;
+    FuncExpr func = *(FuncExpr *)expr.value.func;
     printf("(");
     for (int i = 0; i < func.argc; i++) {
       printf("%s", func.args[i].name);
       printf(":");
-      print_expr(func.args[i].type);
+      printf("%s", func.args[i].type);
       if (i < func.argc - 1) {
         printf(", ");
       }

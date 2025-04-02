@@ -1,12 +1,29 @@
 #include <stdlib.h>
 
+#include "compiler.h"
 #include "memtracker.h"
 #include "parser.h"
+#include "sb.h"
 #include "tokeniser.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+
+// void compileExpr(StringBuilder decl, StringBuilder impl, char *name,
+//                  Expr expr) {}
+
+// void compileFunc(StringBuilder decl, StringBuilder impl, char *name,
+//                  FuncExpr func) {
+//   sb_write(decl, "declare void @");
+//   sb_write(decl, name);
+//   sb_write(decl, "()");
+
+//   sb_write(impl, "define void @");
+//   sb_write(impl, name);
+//   sb_write(impl, "(){");
+//   compileExpr(decl, impl, , Expr expr) sb_write(impl, "}");
+// }
 
 int main() {
   FILE *file = fopen("main.pv", "r");
@@ -46,6 +63,27 @@ int main() {
 
   print_expr(expr);
   printf("\n");
+
+  if (expr.type == EXPR_FUNC) {
+    StringBuilder impl = {0};
+    StringBuilder decl = {0};
+    compile_function(&decl, &impl, *expr.value.func, "main");
+    StringBuilder outBuilder = {0};
+    char *declStr = sb_to_string(&decl, true);
+    char *implStr = sb_to_string(&impl, true);
+    sb_write(&outBuilder, declStr);
+    sb_write(&outBuilder, implStr);
+    free(declStr);
+    free(implStr);
+    FILE *outFile = fopen("out.ll", "w");
+    if (file == NULL) {
+      printf("Failed to open out.ll");
+      return 1;
+    }
+    char *out = sb_to_string(&outBuilder, true);
+    fputs(out, file);
+    free(out);
+  }
 
   free_expr(expr);
 

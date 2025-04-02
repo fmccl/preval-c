@@ -23,56 +23,52 @@ Token copy_token(Token token) {
   newToken.type = token.type;
   switch (token.type) {
   case TT_COLON:
-    newToken.type = TT_COLON;
-    break;
   case TT_FLOAT:
-    newToken.value = malloc(sizeof(float));
-    *(float *)newToken.value = *(float *)token.value;
-    break;
   case TT_INT:
-    newToken.value = malloc(sizeof(int));
-    *(int *)newToken.value = *(int *)token.value;
-    break;
   case TT_OP:
-    newToken.value = malloc(sizeof(Operator));
-    *(Operator *)newToken.value = *(Operator *)token.value;
+    newToken.value = token.value;
     break;
   case TT_NAME:
-    newToken.value = malloc(strlen((char *)token.value) + 1);
-    strcpy((char *)newToken.value, (char *)token.value);
+    newToken.value.name = malloc(strlen((char *)token.value.name) + 1);
+    strcpy((char *)newToken.value.name, (char *)token.value.name);
     break;
-  case TT_PARENS:
+  case TT_PARENS: {
     TokenVec *newTokenVecs =
-        malloc(sizeof(TokenVec) * ((CallToken *)token.value)->argc);
+        malloc(sizeof(TokenVec) * ((ParensToken *)token.value.parens)->argc);
 
-    for (int i = 0; i < ((CallToken *)token.value)->argc; i++) {
+    for (int i = 0; i < ((ParensToken *)token.value.parens)->argc; i++) {
       newTokenVecs[i] = (TokenVec){0};
-      for (int j = 0; j < ((CallToken *)token.value)->args[i].length; j++) {
-        append_token(&newTokenVecs[i],
-                     copy_token(((CallToken *)token.value)->args[i].tokens[j]));
-      }
-    }
-
-    newToken.value = malloc(sizeof(CallToken));
-    ((CallToken *)newToken.value)->args = newTokenVecs;
-    ((CallToken *)newToken.value)->argc = ((CallToken *)token.value)->argc;
-    break;
-  case TT_BLOCK: {
-    TokenVec *newTokenVecs =
-        malloc(sizeof(TokenVec) * ((BlockToken *)token.value)->stmtc);
-
-    for (int i = 0; i < ((BlockToken *)token.value)->stmtc; i++) {
-      newTokenVecs[i] = (TokenVec){0};
-      for (int j = 0; j < ((BlockToken *)token.value)->stmts[i].length; j++) {
+      for (int j = 0; j < ((ParensToken *)token.value.parens)->args[i].length;
+           j++) {
         append_token(
             &newTokenVecs[i],
-            copy_token(((BlockToken *)token.value)->stmts[i].tokens[j]));
+            copy_token(((ParensToken *)token.value.parens)->args[i].tokens[j]));
       }
     }
 
-    newToken.value = malloc(sizeof(BlockToken));
-    ((BlockToken *)newToken.value)->stmts = newTokenVecs;
-    ((BlockToken *)newToken.value)->stmtc = ((BlockToken *)token.value)->stmtc;
+    newToken.value.parens = malloc(sizeof(ParensToken));
+    (newToken.value.parens)->args = newTokenVecs;
+    (newToken.value.parens)->argc = token.value.parens->argc;
+    break;
+  }
+  case TT_BLOCK: {
+    TokenVec *newTokenVecs =
+        malloc(sizeof(TokenVec) * ((BlockToken *)token.value.block)->stmtc);
+
+    for (int i = 0; i < ((BlockToken *)token.value.block)->stmtc; i++) {
+      newTokenVecs[i] = (TokenVec){0};
+      for (int j = 0; j < ((BlockToken *)token.value.block)->stmts[i].length;
+           j++) {
+        append_token(
+            &newTokenVecs[i],
+            copy_token(((BlockToken *)token.value.block)->stmts[i].tokens[j]));
+      }
+    }
+
+    newToken.value.block = malloc(sizeof(BlockToken));
+    ((BlockToken *)newToken.value.block)->stmts = newTokenVecs;
+    ((BlockToken *)newToken.value.block)->stmtc =
+        ((BlockToken *)token.value.block)->stmtc;
   }
   }
   return newToken;
@@ -81,23 +77,23 @@ Token copy_token(Token token) {
 void print_token(Token token) {
   switch (token.type) {
   case TT_FLOAT:
-    printf("%f", *(float *)token.value);
+    printf("%f", token.value._float);
     break;
   case TT_INT:
-    printf("%d", *(int *)token.value);
+    printf("%d", token.value._int);
     break;
   case TT_OP:
-    printf("%c", *(Operator *)token.value);
+    printf("%c", token.value.op);
     break;
   case TT_NAME:
-    printf("%s", (char *)token.value);
+    printf("%s", (char *)token.value.name);
     break;
   case TT_COLON:
     printf(":");
     break;
   case TT_PARENS:
     printf("(");
-    CallToken *callToken = (CallToken *)token.value;
+    ParensToken *callToken = token.value.parens;
     for (int i = 0; i < callToken->argc; i++) {
       for (int j = 0; j < callToken->args[i].length; j++) {
         print_token(callToken->args[i].tokens[j]);
@@ -108,7 +104,7 @@ void print_token(Token token) {
     break;
   case TT_BLOCK:
     printf("{");
-    BlockToken *blockToken = (BlockToken *)token.value;
+    BlockToken *blockToken = (BlockToken *)token.value.block;
     for (int i = 0; i < blockToken->stmtc; i++) {
       for (int j = 0; j < blockToken->stmts[i].length; j++) {
         print_token(blockToken->stmts[i].tokens[j]);
@@ -122,7 +118,7 @@ void print_token(Token token) {
 
 void free_token(Token token) {
   if (token.type == TT_PARENS) {
-    CallToken *callToken = (CallToken *)token.value;
+    ParensToken *callToken = token.value.parens;
     for (int i = 0; i < callToken->argc; i++) {
       for (int j = 0; j < callToken->args[i].length; j++) {
         free_token(callToken->args[i].tokens[j]);
@@ -130,9 +126,10 @@ void free_token(Token token) {
       free(callToken->args[i].tokens);
     }
     free(callToken->args);
+    free(token.value.parens);
   }
   if (token.type == TT_BLOCK) {
-    BlockToken *blockToken = (BlockToken *)token.value;
+    struct BlockToken *blockToken = token.value.block;
     for (int i = 0; i < blockToken->stmtc; i++) {
       for (int j = 0; j < blockToken->stmts[i].length; j++) {
         free_token(blockToken->stmts[i].tokens[j]);
@@ -140,8 +137,10 @@ void free_token(Token token) {
       free(blockToken->stmts[i].tokens);
     }
     free(blockToken->stmts);
+    free(token.value.block);
   }
-  free(token.value);
+  if (token.type == TT_NAME)
+    free(token.value.name);
 }
 
 TokenVec tokenize(char *buf, size_t len) {
@@ -171,19 +170,16 @@ TokenVec tokenize(char *buf, size_t len) {
       Token token = {0};
       if (decimal) {
         token.type = TT_FLOAT;
-        token.value = malloc(sizeof(float));
-        *(float *)token.value = (float)atof(numStr);
+        token.value._float = atof(numStr);
       } else {
         token.type = TT_INT;
-        token.value = malloc(sizeof(int));
-        *(int *)token.value = atoi(numStr);
+        token.value._int = atoi(numStr);
       }
       append_token(&vec, token);
       free(numStr);
     } else if (buf[i] == '+') {
-      Operator *op = malloc(sizeof(Operator));
-      *op = OP_ADD;
-      Token token = {.type = TT_OP, .value = op};
+      Token token = {.type = TT_OP};
+      token.value.op = OP_ADD;
       append_token(&vec, token);
       i++;
     } else if (buf[i] == ':') {
@@ -191,32 +187,29 @@ TokenVec tokenize(char *buf, size_t len) {
       append_token(&vec, token);
       i++;
     } else if (buf[i] == '=') {
-      Operator *op = malloc(sizeof(Operator));
+      Operator op;
       if (i + 1 < len && buf[i + 1] == '>') {
         i++;
-        *op = OP_ARROW;
+        op = OP_ARROW;
       } else {
-        *op = OP_ASSIGN;
+        op = OP_ASSIGN;
       }
 
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
       i++;
     } else if (buf[i] == '-') {
-      Operator *op = malloc(sizeof(Operator));
-      *op = OP_SUB;
+      Operator op = OP_SUB;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
       i++;
     } else if (buf[i] == '/') {
-      Operator *op = malloc(sizeof(Operator));
-      *op = OP_DIV;
+      Operator op = OP_DIV;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
       i++;
     } else if (buf[i] == '*') {
-      Operator *op = malloc(sizeof(Operator));
-      *op = OP_MUL;
+      Operator op = OP_MUL;
       Token token = {.type = TT_OP, .value = op};
       append_token(&vec, token);
       i++;
@@ -231,7 +224,7 @@ TokenVec tokenize(char *buf, size_t len) {
       name[nameLen] = '\0';
       i += nameLen;
 
-      Token token = {.type = TT_NAME, .value = name};
+      Token token = {.type = TT_NAME, .value.name = name};
       append_token(&vec, token);
     } else if (buf[i] == '(') {
       i++;
@@ -298,14 +291,21 @@ TokenVec tokenize(char *buf, size_t len) {
         free(strArgs[j]);
       }
 
+      if (argc != 0) {
+        if (args[argc - 1].length == 0) {
+          free(args[argc - 1].tokens);
+          argc--;
+        }
+      }
+
       free(argLengths);
       free(strArgs);
 
       Token token = {0};
       token.type = TT_PARENS;
-      token.value = malloc(sizeof(CallToken));
-      ((CallToken *)token.value)->args = args;
-      ((CallToken *)token.value)->argc = argc;
+      token.value.parens = malloc(sizeof(ParensToken));
+      (token.value.parens)->args = args;
+      (token.value.parens)->argc = argc;
       append_token(&vec, token);
     } else if (buf[i] == '{') {
       i++;
@@ -387,9 +387,9 @@ TokenVec tokenize(char *buf, size_t len) {
 
       Token token = {0};
       token.type = TT_BLOCK;
-      token.value = malloc(sizeof(BlockToken));
-      ((BlockToken *)token.value)->stmts = args;
-      ((BlockToken *)token.value)->stmtc = argc;
+      token.value.block = malloc(sizeof(BlockToken));
+      (token.value.block)->stmts = args;
+      (token.value.block)->stmtc = argc;
       append_token(&vec, token);
     } else {
       i++;

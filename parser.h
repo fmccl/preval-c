@@ -4,7 +4,14 @@
 #include "tokeniser.h"
 #include <stdbool.h>
 
-typedef struct {
+typedef struct Expr Expr;
+typedef struct Arg Arg;
+typedef struct FuncExpr FuncExpr;
+typedef struct Operation Operation;
+typedef struct CallExpr CallExpr;
+typedef struct BlockExpr BlockExpr;
+
+struct Expr {
   enum {
     EXPR_NULL,
     EXPR_INT,   // value *int
@@ -15,37 +22,45 @@ typedef struct {
     EXPR_BLOCK, // value *BlockExpr
     EXPR_FUNC   // value *FuncExpr
   } type;
-  void *value;
-} Expr;
+  union {
+    int _int;
+    char *name;
+    float _float;
+    Operation *op;
+    CallExpr *call;
+    BlockExpr *block;
+    FuncExpr *func;
+  } value;
+};
 
-typedef struct {
+struct Arg {
   char *name;
-  Expr type;
-} Arg;
+  char *type;
+};
 
-typedef struct {
+struct FuncExpr {
   Arg *args;
   int argc;
   Expr body;
-} FuncExpr;
+};
 
-typedef struct {
+struct Operation {
   Expr left;
   Operator op;
   Expr right;
-} Operation;
+};
 
-typedef struct {
+struct CallExpr {
   Expr *args;
   int argc;
   Expr func;
-} CallExpr;
+};
 
-typedef struct {
+struct BlockExpr {
   Expr *stmts;
   int stmtc;
   bool returns;
-} BlockExpr;
+};
 
 char *parse(Expr *expr, TokenVec outer_tokens, bool shouldFreeTokens);
 
